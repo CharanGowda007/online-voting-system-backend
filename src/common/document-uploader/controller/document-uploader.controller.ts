@@ -54,7 +54,7 @@ export class DocumentUploaderController {
     @Get('/download')
     async downloadFile(
         @Query('key', new DefaultValuePipe(null)) key: string,
-        @Res() res: Response,
+        @Res() res: any,
     ) {
         try {
             const metaData = await this.documentUploaderService.getMetaData(key);
