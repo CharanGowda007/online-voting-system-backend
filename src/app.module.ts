@@ -1,36 +1,47 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { AuthModule } from './common/auth/auth.module';
+import configuration from './config/configuration';
+import { getDatabaseConfig } from './config/database.config';
 import { UserModule } from './common/user/user.module';
-import { LoggerMiddleware } from './common/middleware/logger/logger.middleware';
-import { VoterRegistrationModule } from './voter-registration/voter-registration.module';
+import { AuthModule } from './common/auth/auth.module';
+import { DocumentUploaderModule } from 'src/common/document-uploader/document-uploader.module';
+import { DownloadHistoryModule } from 'src/common/download-history/download-history.module';
 import { MasterModule } from './master/master.module';
+
+import { UserAdminModule } from './userAdmin/userAdmin.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({
-      type: 'mysql',
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '3306', 10),
-      username: process.env.DB_USERNAME || 'root',
-      password: process.env.DB_PASSWORD || 'root',
-      database: process.env.DB_DATABASE || 'online_voting',
-      autoLoadEntities: true,
-      synchronize: true, // Only for dev
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [configuration],
+      envFilePath: [
+        '.env',
+        `.env.${process.env.NODE_ENV || 'local'}`,
+        '.env.local',
+        '.env.dev',
+        '.env.uat',
+        '.env.prod',
+      ],
+      ignoreEnvFile: false,
+    }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) =>
+        getDatabaseConfig(configService),
+      inject: [ConfigService],
     }),
     AuthModule,
     UserModule,
-    VoterRegistrationModule,
+    DocumentUploaderModule,
+    DownloadHistoryModule,
     MasterModule,
+    UserAdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
-  }
-}
-
+export class AppModule {}
