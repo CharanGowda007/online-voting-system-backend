@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 @Injectable()
 export class AppService {
   getHello(): string {
-    return 'Hello World! CAS Backend API';
+    return 'Welcome to the Online Voting System ';
   }
 
   getHealth() {

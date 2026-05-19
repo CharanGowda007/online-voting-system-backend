@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 export class UserLoginDto {
   @IsString()
@@ -12,6 +12,14 @@ export class UserLoginDto {
     message: 'Invalid password format',
   })
   password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  captchaId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  captchaText: string;
 }
 
 export class ChangePasswordDto {
@@ -26,5 +34,51 @@ export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty()
   confirmPassword: string;
+}
+
+export class RegisterDto {
+  @IsString()
+  @IsNotEmpty()
+  mobile: string;
+
+  @IsString()
+  @IsOptional()
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  departmentName?: string;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
+
+  @IsOptional()
+  @IsString()
+  ofcAddress?: string;
+
+  @IsOptional()
+  @IsInt()
+  locationId?: number;
+
+  @IsOptional()
+  @IsString()
+  postName?: string;
+
+  @IsOptional()
+  @IsString()
+  aliasName?: string;
 }
 

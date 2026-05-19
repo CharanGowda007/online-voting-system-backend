@@ -72,10 +72,10 @@ export class PublicService {
       this.CAPTCHA_EXPIRY_TIME,
     );
     const defaultSvg = `
-      <svg width="150" height="50" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100%" height="100%" fill="#d0d0d0"/>
+      <svg viewBox="0 0 150 50" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="#f1f5f9"/>
         ${this.generateNoisyLines(8)}
-        <text x="50%" y="50%" dy=".3em" text-anchor="middle" font-family="Arial" font-size="24" font-weight="bold" letter-spacing="2">${defaultCaptchaText}</text>
+        <text x="50%" y="50%" dy=".3em" text-anchor="middle" font-family="Arial" font-size="28" font-weight="bold" letter-spacing="3" fill="#1e293b">${defaultCaptchaText}</text>
         ${this.generateNoisyDots(20)}
       </svg>
     `;

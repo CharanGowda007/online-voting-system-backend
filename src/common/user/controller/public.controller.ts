@@ -15,42 +15,20 @@ import { PublicService } from '../service/public.service';
 import { RoleService } from '../service/role.service';
 import { CachingUtil } from 'src/common/core/utils/caching.util';
 import { ValidateCaptchaDto } from '../dto/validate-captcha.dto';
-import { UserLoginDto } from '../dto/userLogin.dto';
+import { UserLoginDto, RegisterDto } from '../dto/userLogin.dto';
 import { RoleCode, ROLE_DISPLAY_NAMES } from '../enums/roleCode.enum';
 
 @Controller('public')
 export class PublicController {
   constructor(
-    private readonly userService: UserService,
     private readonly publicService: PublicService,
     private readonly roleService: RoleService,
-    private readonly cachingUtil: CachingUtil,
+    private readonly userService: UserService,
   ) {}
 
-  @Post('login')
-  @HttpCode(200)
-  async userLogin(
-    @Body() userDetails: UserLoginDto,
-    @Req() _req: any,
-    @Res() res: any,
-  ): Promise<any> {
-    try {
-      const response: any = await this.userService.login(userDetails);
-      res.cookie('refreshToken', response.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-      });
-      delete response.refreshToken;
-      delete response.password;
-      return res.json({ success: true, ...response });
-    } catch (error) {
-      const status =
-        error instanceof HttpException
-          ? error.getStatus()
-          : HttpStatus.INTERNAL_SERVER_ERROR;
-      throw new HttpException((error as Error).message, status);
-    }
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: { identifier: string }): Promise<{ message: string }> {
+    return this.userService.forgotPassword(body.identifier);
   }
 
   @Get('generate-captcha')
@@ -91,36 +69,6 @@ export class PublicController {
         : 'All roles already exist.',
       created,
     };
-  }
-
-  @Get('logout')
-  @HttpCode(200)
-  async userLogout(
-    @Req() req: any,
-    @Res() res: any,
-    @Query('loginId') loginId: string,
-    @Query('hId') hId: string,
-  ): Promise<any> {
-    try {
-      const authHeader = req.headers.authorization;
-      let bearerToken: string | null = null;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        bearerToken = authHeader.substring(7);
-      }
-      const result = await this.userService.logout(
-        bearerToken,
-        this.cachingUtil,
-        loginId,
-        hId ? parseInt(hId, 10) : undefined,
-      );
-      return res.json(result);
-    } catch (error) {
-      const status =
-        error instanceof HttpException
-          ? error.getStatus()
-          : HttpStatus.INTERNAL_SERVER_ERROR;
-      throw new HttpException((error as Error).message, status);
-    }
   }
 }
 

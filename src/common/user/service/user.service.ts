@@ -26,12 +26,17 @@ import { PostPermissionService } from 'src/userAdmin/service/postPermission.serv
 import { PostPersonMappingService } from 'src/userAdmin/service/postPersonMapping.service';
 import { BlackListTokenService } from '@/common/auth/services/blackListToken.service';
 import { CreateUserDto } from '../dto/createUser.dto';
-import { ChangePasswordDto, UserLoginDto } from '../dto/userLogin.dto';
+import { RoleCode } from '../enums/roleCode.enum';
+import { UserStatus } from '../enums/userStatus.enum';
+import { ChangePasswordDto, UserLoginDto, RegisterDto } from '../dto/userLogin.dto';
 import { UserType } from '../enums/userTypes.enum';
 import { User } from '../entity/user.entity';
+import { Role } from '../entity/role.entity';
+import { Applicant } from '../entity/applicant.entity';
 import { LoginResponse } from '../types/loginResponse.type';
 import { RoleService } from './role.service';
 import { LoginHistoryService } from './loginHistory.service';
+import { EmailService } from '../../mailer/mailer.service';
 
 @Injectable()
 export class UserService {
@@ -41,6 +46,8 @@ export class UserService {
         private readonly authService: AuthService,
         @InjectRepository(User)
         private userRepo: Repository<User>,
+        @InjectRepository(Role)
+        private roleRepo: Repository<Role>,
         private readonly roleService: RoleService,
         private readonly postPersonMappingService: PostPersonMappingService,
         private readonly postPermissionMappingService: PostPermissionService,
@@ -52,7 +59,120 @@ export class UserService {
         private readonly blackListService: BlackListTokenService,
         private readonly cachingUtil: CachingUtil,
         private readonly loginHistoryService: LoginHistoryService,
+        @InjectRepository(Applicant)
+        private applicantRepo: Repository<Applicant>,
+        private readonly emailService: EmailService,
     ) { }
+
+    /**
+     * System Initialization: Register the first user as Super Admin.
+     */
+    async initializeSuperAdmin(registerDto: RegisterDto): Promise<any> {
+        try {
+            const { mobile, password } = registerDto;
+            this.logger.log(`Super Admin initialization attempt for mobile: ${mobile}`);
+
+            // 1. Check if user already exists
+            const existingUser = await this.userRepo.findOne({
+                where: [{ loginId: mobile }, { aliasName: mobile }]
+            });
+            if (existingUser) {
+                throw new HttpException('User with this mobile number already exists', HttpStatus.BAD_REQUEST);
+            }
+
+            // 2. Check if this is the first user in the system
+            const userCount = await this.userRepo.count();
+            if (userCount > 0) {
+                throw new HttpException('System is already initialized. Super Admin exists.', HttpStatus.FORBIDDEN);
+            }
+
+            // 3. Register/Create Personal Details
+            if (!registerDto.firstName || !registerDto.lastName || !registerDto.email) {
+                throw new HttpException('First name, Last name and Email are required for registration.', HttpStatus.BAD_REQUEST);
+            }
+
+            const personalDetails = await this.personDetailsService.registerUserByMobile({
+                mobileNumber: mobile,
+                firstName: registerDto.firstName,
+                lastName: registerDto.lastName,
+                email: registerDto.email
+            });
+
+            this.logger.log('Setting up Super Admin.');
+            
+            // a. Ensure SUPER_ADMIN role exists
+            let superAdminRole = await this.roleRepo.findOne({ 
+                where: { code: RoleCode.SUPER_ADMIN } 
+            });
+            
+            if (!superAdminRole) {
+                superAdminRole = await this.roleService.create({
+                    code: RoleCode.SUPER_ADMIN,
+                    name: 'Super Admin'
+                });
+            }
+
+            if (!superAdminRole) {
+                throw new HttpException('Failed to create or find Super Admin role', HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+
+            // Ensure all post details are provided
+            if (!registerDto.postName || !registerDto.departmentName || !registerDto.location || !registerDto.ofcAddress) {
+                throw new HttpException('Post details (Name, Department, Location, Office Address) are required for Super Admin initialization.', HttpStatus.BAD_REQUEST);
+            }
+
+            // b. Create a Post for Super Admin
+            const post = await this.postDetailsService.create({
+                postName: registerDto.postName,
+                roleId: superAdminRole.id,
+                roleName: superAdminRole.name,
+                departmentName: registerDto.departmentName,
+                locationId: registerDto.locationId || 1, 
+                location: registerDto.location,
+                ofcAddress: registerDto.ofcAddress,
+                email: registerDto.email,
+                phoneNumber: mobile,
+                aliasName: registerDto.aliasName || mobile
+            });
+
+            // c. Map person to post
+            await this.postPersonMappingService.mapping(post.id, personalDetails.id, {
+                startDate: new Date().toISOString().split('T')[0]
+            });
+
+            // d. Update the user password
+            const hashedPassword = await bcrypt.hash(password, 10);
+            await this.userRepo.update(post.id, {
+                password: hashedPassword,
+                status: UserStatus.ACTIVE,
+                changePasswordRequired: false,
+                userType: UserType.ADMIN
+            });
+
+            return { success: true, message: 'Super Admin registered successfully' };
+
+        } catch (error) {
+            this.logger.error(`Super Admin initialization failed: ${error.message}`);
+            if (error instanceof HttpException) throw error;
+            throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private async generateNextLoginId(): Promise<string> {
+        const lastUser = await this.userRepo.createQueryBuilder('user')
+            .where('user.loginId LIKE :prefix', { prefix: 'OVS-%' })
+            .orderBy('user.loginId', 'DESC')
+            .getOne();
+
+        if (!lastUser || !lastUser.loginId) {
+            return 'OVS-0001';
+        }
+
+        const lastIdStr = lastUser.loginId.replace('OVS-', '');
+        const lastIdNum = parseInt(lastIdStr, 10);
+        const nextIdNum = lastIdNum + 1;
+        return `OVS-${nextIdNum.toString().padStart(4, '0')}`;
+    }
 
     async createUser(createUserDto: CreateUserDto): Promise<User> {
         try {
@@ -61,22 +181,47 @@ export class UserService {
             if (passwordValidationMsg) {
                 throw new HttpException(passwordValidationMsg, HttpStatus.BAD_REQUEST);
             }
-            const userExists = await this.isUserExists(createUserDto.loginId || '');
-            if (userExists) {
-                throw new HttpException('User already exists', HttpStatus.BAD_REQUEST);
-            }
+
+            // Generate Serial Login ID
+            const loginId = await this.generateNextLoginId();
+            this.logger.log(`Generated Serial Login ID: ${loginId}`);
+
             const passwordToStore = isBcryptHash(rawPassword)
                 ? rawPassword
                 : await bcrypt.hash(rawPassword, 10);
 
+            // Separate User fields from Profile fields
+            const { 
+                firstName, lastName, email, departmentName, location, ofcAddress,
+                ...userFields 
+            } = createUserDto;
+
             const newUser = this.userRepo.create({
-                ...createUserDto,
+                ...userFields,
+                loginId: loginId, // Use generated series ID
                 password: passwordToStore,
                 changePasswordRequired: true,
+                resetRequired: createUserDto.resetRequired ?? true,
                 lastPasswordChanged: new Date(),
-                aliasName: createUserDto.loginId?.trim() ?? '',
+                aliasName: loginId, // Set alias as loginId for consistency
             });
-            return this.userRepo.save(newUser);
+            const savedUser = await this.userRepo.save(newUser);
+
+            // Create Personal Details if any profile info provided
+            if (firstName || lastName || email) {
+                await this.personDetailsService.create({
+                    firstName,
+                    lastName: lastName || '',
+                    email: email || '',
+                    mobileNumber: createUserDto.loginId || '', // Using provided mobile for profile
+                    personUniqueId: savedUser.loginId, // Crucial: link profile to loginId (OVS-xxxx)
+                    department: departmentName,
+                    state: location,
+                    status: 'ACTIVE'
+                });
+            }
+
+            return savedUser;
 
         } catch (error) {
             const status =
@@ -170,53 +315,76 @@ export class UserService {
                 );
             }
             this.logger.log(`Password matched for loginId: ${loginId}`);
+            
+            const newUserToken = new UserTokenPayload();
+            newUserToken.userId = userDetails.id;
+            newUserToken.loginId = userLoginDto.loginId;
+            newUserToken.userType = userDetails.userType;
+            newUserToken.mimic = false;
+            newUserToken.permissions = [];
 
-            const personalDetails =
-                await this.personDetailsService.getPersonalDetailsByLoginId(
+            let personalDetails: any;
+            let postDetails: any;
+
+            if (userDetails.userType === UserType.APPLICANT) {
+                const applicant = await this.applicantRepo.findOne({
+                    where: { userId: userDetails.id }
+                });
+                if (!applicant) {
+                    throw new HttpException('Applicant details not found.', HttpStatus.NOT_FOUND);
+                }
+                personalDetails = applicant;
+                // Applicants don't have posts yet
+                newUserToken.postName = 'Applicant';
+                newUserToken.locationId = 1;
+                newUserToken.postId = '';
+                newUserToken.departmentId = 0;
+            } else {
+                // Try finding by serial ID (OVS-xxxx)
+                personalDetails = await this.personDetailsService.getPersonalDetailsByLoginId(
                     userDetails.loginId || userLoginDto.loginId,
                 );
-            if (!personalDetails) {
-                this.logger.warn(
-                    `Login failed - personal details not found for loginId: ${loginId}`,
-                );
-                throw new HttpException(
-                    'Personal details not found.',
-                    HttpStatus.UNAUTHORIZED,
-                );
-            }
 
-            const postPersonMapping =
-                await this.postPersonMappingService.findMappingByPersonId(
-                    personalDetails.id,
-                );
-            const postDetails = await this.postDetailsService.getById(
-                postPersonMapping.postId,
-            );
-            this.logger.log(
-                `Post mapping and post details found for loginId: ${loginId}`,
-            );
+                // Fallback: If profile mismatch (e.g. from older test data), try finding by mobile number
+                if (!personalDetails && userDetails.loginId) {
+                    personalDetails = await this.personDetailsService.findByMobileNumber(userDetails.loginId);
+                }
+
+                if (!personalDetails) {
+                    this.logger.warn(`Login failed - personal details not found for loginId: ${loginId}`);
+                    throw new HttpException('Personal details not found.', HttpStatus.UNAUTHORIZED);
+                }
+
+                // Get Post Details (if assigned)
+                try {
+                    const postPersonMapping = await this.postPersonMappingService.findMappingByPersonId(personalDetails.id);
+                    postDetails = await this.postDetailsService.getById(postPersonMapping.postId);
+                    
+                    newUserToken.postName = postDetails.postName;
+                    newUserToken.locationId = postDetails.locationId;
+                    newUserToken.postId = postDetails.id;
+                    newUserToken.departmentId = personalDetails.departmentId || 0;
+                } catch (e) {
+                    this.logger.log(`User ${loginId} has no active post mapping. Proceeding with limited access.`);
+                    newUserToken.postName = 'Staff';
+                    newUserToken.locationId = 1;
+                    newUserToken.postId = '';
+                    newUserToken.departmentId = 0;
+                }
+            }
 
             const loginHistoryEntry = await this.loginHistoryService.createLoginEntry(
                 personalDetails.id,
                 userDetails.loginId || userLoginDto.loginId,
-                postDetails.locationId,
-                postDetails.id,
+                newUserToken.locationId || 1,
+                newUserToken.postId || '',
             );
 
-            const newUserToken = new UserTokenPayload();
-            newUserToken.userId = userDetails.id;
-            newUserToken.loginId = userLoginDto.loginId;
-            newUserToken.postName = postDetails.postName;
-            newUserToken.locationId = postDetails.locationId;
-            newUserToken.postId = postDetails.id;
             newUserToken.firstName = personalDetails.firstName;
             newUserToken.lastName = personalDetails.lastName;
             newUserToken.gender = personalDetails.gender;
             newUserToken.districtName = personalDetails.districtName;
             newUserToken.talukaName = personalDetails.talukaName;
-            newUserToken.mimic = false;
-            newUserToken.permissions = [];
-            newUserToken.departmentId = personalDetails.departmentId || 0;
 
             let response: any = await this.userDetailsConstruct(
                 userDetails,
@@ -273,9 +441,18 @@ export class UserService {
             UserType.ADMIN,
             UserType.CANDIDATE,
             UserType.VOTER,
+            UserType.APPLICANT,
         ];
         if (!supportedTypes.includes(userDetails.userType)) {
             return {};
+        }
+
+        if (userDetails.userType === UserType.APPLICANT) {
+            return {
+                role: 'APPLICANT',
+                userType: UserType.APPLICANT,
+                permissions: []
+            };
         }
         const personloginid = await this.userRepo.findOne({
             where: { id: userDetails.id },
@@ -469,6 +646,39 @@ export class UserService {
             changePasswordRequired: false,
         });
         return { message: 'Password changed successfully' };
+    }
+
+    async forgotPassword(loginIdOrEmail: string): Promise<{ message: string }> {
+        const user = await this.userRepo.findOne({
+            where: [
+                { loginId: loginIdOrEmail },
+                { email: loginIdOrEmail },
+                { aliasName: loginIdOrEmail }
+            ]
+        });
+
+        if (!user) {
+            throw new HttpException('User not found with provided identifier', HttpStatus.NOT_FOUND);
+        }
+
+        if (!user.email) {
+            throw new HttpException('No email associated with this account. Please contact admin.', HttpStatus.BAD_REQUEST);
+        }
+
+        // Generate random 8-character password
+        const tempPassword = Math.random().toString(36).slice(-8);
+        const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+        await this.userRepo.update(user.id, {
+            password: hashedPassword,
+            changePasswordRequired: true,
+            lastPasswordChanged: new Date()
+        });
+
+        // Send email directly (using HTML template)
+        await this.emailService.sendPasswordResetEmail(user.email, tempPassword);
+
+        return { message: 'A new temporary password has been sent to your registered email address.' };
     }
 
     async logout(

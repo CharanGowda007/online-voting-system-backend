@@ -25,10 +25,35 @@ export class CreateUserDto {
   status: UserStatus;  
 
   @IsBoolean()
-  @IsNotEmpty()
-  resetRequired: boolean;  
+  @IsOptional()
+  resetRequired?: boolean;  
 
   @IsEnum(UserType)
   @IsNotEmpty()
-  userType: UserType;  
+  userType: UserType;
+
+  // Profile Fields (Optional for User entity creation, processed by UserService)
+  @IsString()
+  @IsOptional()
+  firstName?: string;
+
+  @IsString()
+  @IsOptional()
+  lastName?: string;
+
+  @IsString()
+  @IsOptional()
+  email?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentName?: string;
+
+  @IsString()
+  @IsOptional()
+  location?: string;
+
+  @IsString()
+  @IsOptional()
+  ofcAddress?: string;
 }

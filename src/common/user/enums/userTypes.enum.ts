@@ -1,5 +1,6 @@
 export enum UserType {
    VOTER='VOTER',
     CANDIDATE='CANDIDATE',
-    ADMIN='ADMIN'
+    ADMIN='ADMIN',
+    APPLICANT='APPLICANT'
 }

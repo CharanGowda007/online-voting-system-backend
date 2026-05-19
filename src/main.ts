@@ -34,26 +34,26 @@ async function bootstrap() {
       helmet({
         contentSecurityPolicy: cspEnabled
           ? {
-              directives: {
-                defaultSrc: ["'self'"],
-                styleSrc: ["'self'", "'unsafe-inline'"],
-                scriptSrc: ["'self'"],
-                imgSrc: ["'self'", 'data:', 'https:'],
-                connectSrc: ["'self'"],
-                fontSrc: ["'self'"],
-                objectSrc: ["'none'"],
-                mediaSrc: ["'self'"],
-                frameSrc: ["'none'"],
-              },
-            }
+            directives: {
+              defaultSrc: ["'self'"],
+              styleSrc: ["'self'", "'unsafe-inline'"],
+              scriptSrc: ["'self'"],
+              imgSrc: ["'self'", 'data:', 'https:'],
+              connectSrc: ["'self'"],
+              fontSrc: ["'self'"],
+              objectSrc: ["'none'"],
+              mediaSrc: ["'self'"],
+              frameSrc: ["'none'"],
+            },
+          }
           : false,
         crossOriginEmbedderPolicy: false,
         hsts: hstsEnabled
           ? {
-              maxAge: hstsMaxAge,
-              includeSubDomains: true,
-              preload: true,
-            }
+            maxAge: hstsMaxAge,
+            includeSubDomains: true,
+            preload: true,
+          }
           : false,
         noSniff: true,
         referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
@@ -104,8 +104,8 @@ async function bootstrap() {
 
   if (enableSwagger) {
     const config = new DocumentBuilder()
-      .setTitle('CAS Backend API')
-      .setDescription('CAS Backend API documentation')
+      .setTitle('Online Voting System Backend API')
+      .setDescription('Online Voting System Backend API documentation')
       .setVersion('1.0')
       .addBearerAuth()
       .build();

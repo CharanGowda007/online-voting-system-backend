@@ -12,6 +12,7 @@ import { DownloadHistoryModule } from 'src/common/download-history/download-hist
 import { MasterModule } from './master/master.module';
 
 import { UserAdminModule } from './userAdmin/userAdmin.module';
+import { MailerModule } from './common/mailer/mailer.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { UserAdminModule } from './userAdmin/userAdmin.module';
         getDatabaseConfig(configService),
       inject: [ConfigService],
     }),
+    MailerModule,
     AuthModule,
     UserModule,
     DocumentUploaderModule,

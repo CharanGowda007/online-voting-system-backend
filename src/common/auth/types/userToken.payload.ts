@@ -16,4 +16,5 @@ export class UserTokenPayload {
   talukaName: string;
   gender: string;
   mimic: boolean;
+  userType: string;
 }

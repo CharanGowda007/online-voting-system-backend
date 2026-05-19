@@ -9,6 +9,7 @@ export enum RoleCode{
     'MEDIA'='MEDIA',
     'SECURITY'='SECURITY',
     'OTHER'='OTHER',
+    'APPLICANT'='APPLICANT',
 }
 
 export const ROLE_DISPLAY_NAMES:Record<RoleCode,string> = {
@@ -22,4 +23,5 @@ export const ROLE_DISPLAY_NAMES:Record<RoleCode,string> = {
     [RoleCode.MEDIA]:'Media',
     [RoleCode.SECURITY]:'Security',
     [RoleCode.OTHER]:'Other',
+    [RoleCode.APPLICANT]:'Applicant',
 }
